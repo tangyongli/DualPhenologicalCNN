@@ -6,244 +6,43 @@ from keras import backend as K
 from keras import callbacks
 import keras
 from tensorflow.keras import layers
-
-from tensorflow.keras.layers import Input, Reshape, LayerNormalization, multiply, Dense, Activation, Add, Flatten, Lambda, Concatenate, Conv1D, Conv2D,GlobalAveragePooling2D
-from tensorflow.keras.layers import Input, BatchNormalization, Activation,DepthwiseConv2D
-from tensorflow.keras.layers import Dense, Softmax, Flatten, Lambda, Concatenate
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import ConvLSTM2D, BatchNormalization
+from tensorflow.keras.layers import Conv3D,Reshape, LayerNormalization, multiply, Dense, Activation, Add, Flatten, Lambda, Concatenate, Conv1D, Conv2D,GlobalAveragePooling2D
+from tensorflow.keras.layers import BatchNormalization, Activation,DepthwiseConv2D,MaxPooling2D,GlobalAveragePooling2D,GlobalAveragePooling3D,GlobalAveragePooling1D
+from tensorflow.keras.layers import Input,Dense,Dropout, Softmax, Flatten, Lambda, Concatenate
 from tensorflow import expand_dims
 from keras.models import Model
+from tensorflow.keras.layers import LSTM,TimeDistributed
 import math
 import os
-def channel_attention_lowhigh(inputslow,inputshigh,ratio=8):
-    
-    # 通道维度上的平均池化
-    # avg_pool= layers.TimeDistributed(layers.GlobalAveragePooling2D())(input_feature)
-    inputs=layers.concatenate([inputslow,inputshigh],axis=-1)
-    avg_pool= layers.GlobalAveragePooling2D()(inputs)
-    max_pool = layers.GlobalMaxPooling2D()(inputs)
-    avg_pool=Reshape((1,1,avg_pool.shape[-1]))(avg_pool)
-    max_pool = Reshape((1,1,max_pool.shape[-1]))(max_pool)
-    
-    # avg_pool = Lambda(lambda x: K.reshape(x, (K.shape(x)[0], 1, 1, K.shape(x)[-1])))(avggeo_pool)
-    # max_pool= Lambda(lambda x: K.reshape(x, (K.shape(x)[0], 1, 1, K.shape(x)[-1])))(maxgeo_pool)
-    # print('avg_pool',avg_pool.shape)
-    channel =  avg_pool.shape[-1]  # 获取通道维度
-    shared_layer_one = Dense(channel // ratio, activation='relu', kernel_initializer='he_normal', use_bias=True, bias_initializer='zeros')
-    shared_layer_two = Dense(channel, kernel_initializer='he_normal', use_bias=True, bias_initializer='zeros')
-    avg_pool=shared_layer_one(avg_pool
-                               )
-    avg_pool=shared_layer_two(avg_pool)
-    print('avg2', avg_pool.shape) 
-   
- 
-    max_pool= shared_layer_one(max_pool)
-    max_pool= shared_layer_two(max_pool)
 
-
-    cbam_feature = Add()([avg_pool,max_pool])
-    cbam_feature = Activation('sigmoid')(cbam_feature)
-    inputshigh=Conv2D(filters=cbam_feature.shape[-1], kernel_size=1, strides=1, padding='same',  kernel_initializer='he_normal', use_bias=False)(inputshigh)
-    inputshigh=BatchNormalization()(inputshigh)
-    return multiply([inputshigh, cbam_feature])
-def spatial_attention_lowhigh(low,high,kernel_size=7):
-  
-    inputs=Concatenate(axis=-1)([low,high])
-    avg_pool = Lambda(lambda x: K.mean(x, axis=-1, keepdims=True))(inputs)
-    max_pool = Lambda(lambda x: K.max(x, axis=-1, keepdims=True))(inputs)
-    print('concatspatial',avg_pool.shape,max_pool.shape) #(None, 256, 256, 1) (None, 256, 256, 1)
-    concat = Concatenate(axis=-1)([avg_pool, max_pool]) #(None, 256, 256, 1) (None, 256, 256, 2)
-    cbam_feature = Conv2D(filters=1, kernel_size=kernel_size, strides=1, padding='same', activation='sigmoid', kernel_initializer='he_normal', use_bias=False)(concat)
-    # print("spation",cbam_feature.shape) #(None, 7,7 1)
-    low=Conv2D(filters=high.shape[-1], kernel_size=1, strides=1, padding='same',  kernel_initializer='he_normal', use_bias=False)(low)
-    low=BatchNormalization()(low)
-    return multiply([low, cbam_feature])
-def attentionf(low,high):
-    x=channel_attention_lowhigh(low,high,ratio=8)
-    x=spatial_attention_lowhigh(low,x)
-    return x
 
 def channel_attention(inputs,ratio=8):
-    
-    # 通道维度上的平均池化
-    # avg_pool= layers.TimeDistributed(layers.GlobalAveragePooling2D())(input_feature)
     avg_pool= layers.GlobalAveragePooling2D()(inputs)
     max_pool = layers.GlobalMaxPooling2D()(inputs)
+    # print(avg_pool.shape,max_pool.shape)
     avg_pool=Reshape((1,1,avg_pool.shape[-1]))(avg_pool)
     max_pool = Reshape((1,1,max_pool.shape[-1]))(max_pool)
-    
-    # avg_pool = Lambda(lambda x: K.reshape(x, (K.shape(x)[0], 1, 1, K.shape(x)[-1])))(avggeo_pool)
-    # max_pool= Lambda(lambda x: K.reshape(x, (K.shape(x)[0], 1, 1, K.shape(x)[-1])))(maxgeo_pool)
-    # print('avg_pool',avg_pool.shape)
     channel =  avg_pool.shape[-1]  # 获取通道维度
     shared_layer_one = Dense(channel // ratio, activation='relu', kernel_initializer='he_normal', use_bias=True, bias_initializer='zeros')
     shared_layer_two = Dense(channel, kernel_initializer='he_normal', use_bias=True, bias_initializer='zeros')
-    avg_pool=shared_layer_one(avg_pool
-                               )
+    avg_pool=shared_layer_one(avg_pool)
     avg_pool=shared_layer_two(avg_pool)
-    print('avg2', avg_pool.shape) 
-   
- 
     max_pool= shared_layer_one(max_pool)
     max_pool= shared_layer_two(max_pool)
-
-
     cbam_feature = Add()([avg_pool,max_pool])
     cbam_feature = Activation('sigmoid')(cbam_feature)
-    # inputshigh=Conv2D(filters=cbam_feature.shape[-1], kernel_size=1, strides=1, padding='same',  kernel_initializer='he_normal', use_bias=False)(inputs)
-   
     return multiply([inputs, cbam_feature])
-def spatial_attention(inputs,kernel_size=7):
-  
-   
-    avg_pool = Lambda(lambda x: K.mean(x, axis=-1, keepdims=True))(inputs)
-    max_pool = Lambda(lambda x: K.max(x, axis=-1, keepdims=True))(inputs)
-    print('concatspatial',avg_pool.shape,max_pool.shape) #(None, 256, 256, 1) (None, 256, 256, 1)
-    concat = Concatenate(axis=-1)([avg_pool, max_pool]) #(None, 256, 256, 1) (None, 256, 256, 2)
-    cbam_feature = Conv2D(filters=1, kernel_size=kernel_size, strides=1, padding='same', activation='sigmoid', kernel_initializer='he_normal', use_bias=False)(concat)
-    # print("spation",cbam_feature.shape) #(None, 7,7 1)
-    # low=Conv2D(filters=high.shape[-1], kernel_size=1, strides=1, padding='same',  kernel_initializer='he_normal', use_bias=False)(low)
-    # low=BatchNormalization()(low)
+
+def spatial_attention(inputs, kernel_size=5):
+    avg_pooling = Lambda(lambda x: K.mean(x, axis=-1, keepdims=True))(inputs)
+    max_pooling = Lambda(lambda x: K.max(x, axis=-1, keepdims=True))(inputs)
+    concat = Concatenate(axis=-1)([avg_pooling, max_pooling])
+    cbam_feature = Conv2D(filters=1, kernel_size=(kernel_size,kernel_size), strides=1, padding='same', activation='sigmoid',  use_bias=False)(concat)
     return multiply([inputs, cbam_feature])
-def attentionf(low,high):
-    x=channel_attention_lowhigh(low,high,ratio=8)
-    x=spatial_attention_lowhigh(low,x)
-    return x
 
-
-def conv2dbnblock(inputs,kernel_size,num_filters):
-    x = layers.Conv2D(num_filters, kernel_size, strides=1,padding="same",kernel_initializer='he_normal', use_bias=False)(inputs)
-    x = BatchNormalization()(x) 
-  
-    return x
-def ResBlock(inputs,kernel_size,num_filters,two,attention):
-        if two==False:
-            if attention==0:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-            elif attention==1:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-                x=spatial_attention_lowhigh(inputs,x)
-            elif attention==2:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-                x=channel_attention_lowhigh(inputs,x)
-            elif attention==3:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-                x=attentionf(inputs,x)
-              
-        else:
-            if attention==0:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-                x=layers.ReLU()(x)
-                x=conv2dbnblock(x,kernel_size,num_filters)
-            elif attention==1:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-                x=layers.ReLU()(x)
-                x=conv2dbnblock(x,kernel_size,num_filters)
-                x=spatial_attention_lowhigh(inputs,x)
-            elif attention==2:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-                x=layers.ReLU()(x)
-                x=conv2dbnblock(x,kernel_size,num_filters)
-                x=channel_attention_lowhigh(inputs,x,8)
-            elif attention==3:
-                x=conv2dbnblock(inputs,kernel_size,num_filters)
-                x=layers.ReLU()(x)
-                x=conv2dbnblock(x,kernel_size,num_filters)
-                x=attentionf(inputs,x)
-        inputs=conv2dbnblock(inputs,kernel_size=1,num_filters=x.shape[-1])
-        x=layers.Add()([inputs, x])
-        x=layers.ReLU()(x)
-        return x
-def resnetattention(inputshape,cnn2dfilters,cnn1dfilters,two=False,attention=0,dropout=0):
-    inputs= keras.Input(shape=inputshape)
-    x= conv2dbnblock(inputs,kernel_size=3,num_filters=cnn2dfilters[0])
-    x=layers.ReLU()(x)
-    x= conv2dbnblock(x,kernel_size=3,num_filters=cnn2dfilters[1])
-    x=layers.ReLU()(x)
-    print('x',x.shape)
-    # repeat the resnet block 3 times
-    x=ResBlock(x,cnn2dfilters[2],3,two=two,attention=attention)
-    print(x.shape)
-    x=ResBlock(x,cnn2dfilters[3],3,two=two,attention=attention)
-    x=ResBlock(x,cnn2dfilters[4],3,two=two,attention=attention)
-    x2d=GlobalAveragePooling2D()(x)
-    x2d=Dense(256)(x2d)
-    x1d= cnn1d(inputs,cnn1dfilters)
-
-    x=featurefusion(cnn2df=x2d,cnn1df=x1d,ratio=8)
-
-    x= layers.Dropout(dropout)(x)
-    x=Dense(64)(x)
-    x= layers.Dropout(dropout)(x)
-    output_layer=Dense(2,activation='softmax')(x) #,activation='sigmoid'
-    # output_layer=Dense(1, activation='sigmoid')(x)
-
-    return Model(inputs,output_layer)
- 
-
-def simplecnn2d(inputshape,num_filters,dropratio):
-    inputs= keras.Input(shape=inputshape) # 11,11,121
-    x=layers.Conv2D(num_filters[0], 3, strides=1,padding="same", activation='relu')(inputs)
-    x=layers.Conv2D(num_filters[1],3,strides=1,padding='same', activation='relu')(x) # 
-   
-    # x=ResBlock(x,num_filters[1]) 
-    x=layers.Conv2D(num_filters[2],3,strides=1,padding='same', activation='relu')(x) #
-    x=layers.Conv2D(num_filters[3],3,strides=1,padding='same', activation='relu')(x) # 
-    x=layers.MaxPooling2D()(x)
-    x=layers.Conv2D(num_filters[4],3,strides=1,padding='same', activation='relu')(x) 
-    x=GlobalAveragePooling2D()(x)
-    x=Dense(512)(x)
-    x= layers.Dropout(dropratio)(x)
-    output_layer=Dense(2,activation='softmax')(x)
-    return Model(inputs, output_layer)
-
-
-def depthsepar2dattention(input,filters,multiscale=False,attention=0):
-    '''
-    attention:
-    0,no attention
-    1spatial attention
-    2,channel attention
-    3,channel and spatial attention low high
-    4,channel and spatial attention,common
-    '''
-    if multiscale:
-        x1=DepthwiseConv2D(1,padding='same')(input)
-        # x1 = BatchNormalization()(x1) 
-        x3=DepthwiseConv2D(3,padding='same')(input)
-        # x3 = BatchNormalization()(x3) 
-        x5=DepthwiseConv2D(5,padding='same')(input)
-        # x5 = BatchNormalization()(x5) 
-        x=Concatenate()([x1,x3,x5])
-        x=BatchNormalization()(x)
-        x=layers.ReLU()(x)
-    else:
-        x=DepthwiseConv2D(3,padding='same')(input)
-        x = BatchNormalization()(x) 
-        x=layers.ReLU()(x)
-    x1=layers.Conv2D(filters,(1,1),strides=(1,1),padding='same',kernel_initializer='he_normal', use_bias=False)(x)
-    x1 = keras.layers.BatchNormalization()(x1)
-    if attention==0:
-        x=x1
-    elif attention==1:
-        x=spatial_attention_lowhigh(input,x1)
-    elif attention==2:
-        x=channel_attention_lowhigh(input,x1,8)
-    elif attention==3:
-        x=attentionf(low=input,high=x1)
-    elif attention==4:
-        x=channel_attention(x1,ratio=8)
-        # x3=layers.Add()([x1, x2])
-        x=spatial_attention(x)
-        # x=layers.Add()([x3, x])
-
-    input=layers.Conv2D(x.shape[-1],(1,1),strides=(1,1),padding='same',kernel_initializer='he_normal', use_bias=False)(input)
-    input= keras.layers.BatchNormalization()(input)
-    x=Add()([input,x])
-    x = layers.ReLU()(x)
-    print('x',x.shape)
-    return x
-
-# 输入和输出都是none,channels
 def eca_block(inputs, b=1, gama=2):
     print('inputs',inputs.shape) #(None, 256)
     # 输入特征图的通道数
@@ -264,11 +63,14 @@ def eca_block(inputs, b=1, gama=2):
 
  
     # [None,c]==>[c,1]
+    # [c,1]==>[c,1] 1D卷积输入3纬
+    # [c,1]==>[c,1] 1D卷积输入3纬
+    # x=GlobalAveragePooling2D()(inputs)
     x = layers.Reshape((in_channel, 1))(inputs) # (None, 256, 1)
     # print('xreshape',x.shape)
-    # [c,1]==>[c,1] 1D卷积输入3纬
+    
     x = layers.Conv1D(filters=1, kernel_size=kernel_size, padding='same', use_bias=False)(x)
- 
+    #x = layers.Conv1D(filters=1, kernel_size=kernel_size, padding='same', use_bias=False)(x)
     # sigmoid激活
     x = tf.nn.sigmoid(x) # 
     print('xsigmoid',x.shape) # xsigmoid (None, 256, 1)
@@ -291,76 +93,40 @@ result = tf.multiply(A, B)
 # Print the result
 print(result.shape)  # Output: (1, 1, 2)
 
-    
-    
-    
     '''
     # 结果和输入相乘
     outputs = layers.multiply([inputs, x])
     print('outputs',outputs.shape)
     outputs = Add()([inputs,outputs])
     return outputs
-def cnn1d(inputs,num_filters,cnn1dattention):
-    inputheight,inputwidth,inputchannels=inputs.shape[1],inputs.shape[2],inputs.shape[-1]
-    xcenter=layers.Lambda(lambda x: x[...,inputheight//2:inputheight//2+1,inputwidth//2:inputwidth//2+1,0:inputchannels])(inputs)
-    xcenter=Reshape((xcenter.shape[-1],1))(xcenter) # 15,1
-    for i in range(len(num_filters)):
-        
-        xcenter=layers.Conv1D(num_filters[i],(3,),strides=(2,),padding='same',kernel_initializer='he_normal', use_bias=False)(xcenter)
-        # xcenter=BatchNormalization()(xcenter) 
-        xcenter=layers.ReLU()(xcenter)
-    print('xcenter1',xcenter.shape) # xcenter1 (None, 1, 256)
-    xcenter=Reshape((xcenter.shape[-1],))(xcenter)  # none,256   
-    if cnn1dattention:
-        xcenter=eca_block(xcenter, b=1, gama=2)
-        # xcenter=Reshape((xcenter.shape[-1],))(xcenter) # none,256
-        # print('xcenter',xcenter.shape)
-        # c=xcenter.shape[-1] 
-        # x=Dense(c/8)(xcenter)
-        # x=Dense(c)(x)
-        # xattention=Activation('sigmoid')(x)
-        # xcenter=multiply([xattention,xcenter])
-    # xcenter=layers.Conv1D(256,(3,),strides=(2,),padding='same',kernel_initializer='he_normal', use_bias=False)(xcenter)\
-    # xcenter=layers.GlobalAveragePooling1D(name='average')(xcenter)
-    # print('xcenter2',xcenter.shape) # none,256
 
-    print('xcenter2',xcenter.shape) #none,256
-    # xcenter=layers.Dense(256)(xcenter)
 
-    return xcenter
-def cnn1dsingle(inputshape,num_filters,cnn1dattention,dropout): # 1,1,16
-    input=keras.Input(shape=inputshape) #1,1,16
-    xcenter=Reshape((input.shape[-1],1))(input) # 16,1
-    for i in range(len(num_filters)):
-        
-        xcenter=layers.Conv1D(num_filters[i],(3,),strides=(2,),padding='same',kernel_initializer='he_normal', use_bias=False)(xcenter)
-        xcenter=BatchNormalization()(xcenter) 
-        xcenter=layers.ReLU()(xcenter)
-    print('xcenter',xcenter.shape) # none,1,256
-    xcenter=layers.GlobalAveragePooling1D(name='average')(xcenter)
-    xcenter=Reshape((xcenter.shape[-1],1))(xcenter)
-    if cnn1dattention:
-        xcenter=eca_block(xcenter, b=1, gama=2)
-        xcenter=Reshape((xcenter.shape[-1],))(xcenter) # none,256
-        print('xcenter',xcenter.shape)
-    x= layers.Dropout(dropout)(xcenter)
-    x=Dense(64)(x)
-    x= layers.Dropout(dropout)(x)
-    output_layer=Dense(2,activation='softmax')(x) #,activation='sigmoid'
-    # output_layer=Dense(1, activation='sigmoid')(x)
 
-    return Model(input,output_layer)
+def conv2dbnblock(inputs,kernel_size,num_filters):
+    x = layers.Conv2D(num_filters, kernel_size, strides=1,padding="same",kernel_initializer='he_normal', use_bias=False)(inputs)
+    x = BatchNormalization()(x) 
+  
+    return x
 
- 
+
+
+def convbnrelu(inputs,cbrm=1):
+    x = Conv2D(16, (3, 3), activation='relu')(inputs)
+    # x = TimeDistributed(MaxPooling2D((2, 2)))(x)
+    x = Conv2D(32, (3, 3), activation='relu')(x)
+    # x = TimeDistributed(MaxPooling2D((2, 2)))(x)
+    x = Conv2D(64, (3, 3), activation='relu')(x)
+    if cbrm:
+        # x=channel_attention(x,ratio=8)
+        x=spatial_attention(x)
+    x=GlobalAveragePooling2D()(x)
+    return x
+
 def featurefusion(cnn2df,cnn1df,ratio,eca):
-    # cnn2df=layers.Conv1D(128,(3,),strides=(2,),padding='same',kernel_initializer='he_normal', use_bias=False)(cnn2df)
-    # cnn1df=layers.Conv1D(128,(3,),strides=(2,),padding='same',kernel_initializer='he_normal', use_bias=False)(cnn1df)
-    # cnn2df=layers.GlobalAveragePooling1D(name='average2df')(cnn2df)
-    # cnn1df=layers.GlobalAveragePooling1D(name='average1df')(cnn1df)
- 
     xc=layers.concatenate([cnn2df,cnn1df],axis=-1)
-    print('xc',xc.shape)
+    # print('xc',xc.shape)
     #eca和dense区别不大，dense更好;dense中ratio的确定;
+
     if eca==1:
         x=eca_block(xc, 1, 2)
     elif eca==0:
@@ -373,112 +139,378 @@ def featurefusion(cnn2df,cnn1df,ratio,eca):
         # whether spilt by cnn2d and cnn1d?
         x=Add()([xc,x])
     return x
+######################## For dualcnn1d #################################
+def single1D(inputs):
+    inputheight,inputwidth,inputchannels=inputs.shape[1],inputs.shape[2],inputs.shape[-1]
+    xcenter=layers.Lambda(lambda x: x[...,inputheight//2:inputheight//2+1,inputwidth//2:inputwidth//2+1,0:inputchannels])(inputs)
+    xcenter=Reshape((xcenter.shape[-1],1))(xcenter) # 13,1
+    x = tf.keras.layers.Conv1D(filters=16, kernel_size=(5), padding='valid')(xcenter)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    x = Conv1D(filters=32, kernel_size=(5),padding='valid')(x)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    x= Conv1D(filters=64, kernel_size=(3),padding='valid')(x)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    x= Conv1D(filters=128, kernel_size=(3),padding='valid')(x)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    output=GlobalAveragePooling1D()(x)
+    print(output.shape)
 
-def dualsparableseparatenorCnn2dcnn1d(inputshape2d,inputshape1d,cnn2dfilters,cnn1dfilters,multiscales,attentions,cnn1dattention=1,eca=1,fusionattention=0,dropout=0):
-    '''
-    attention:
-    0,no attention
-    1spatial attention
-    2,channel attention
-    3,channel and spatial attention
-    '''
-    '''
-    cnn2dfilters,cnn1dfilters,multiscales,attentions are list
+    return output
+
+# inputs=keras.Input(shape=(11,11,13))
+# single1D(inputs).shape
+
+
+def hycnn1d(inputshape,drop,fusion,single1):
+    inputs= Input(shape=inputshape)
+    mask_input = Input(shape=(9,9,26))
+    inputheight,inputwidth,inputchannels=mask_input.shape[1],mask_input.shape[2],mask_input.shape[-1]
+    mask=layers.Lambda(lambda x: x[...,inputheight//2:inputheight//2+1,inputwidth//2:inputwidth//2+1,0:inputchannels])(mask_input)
+    print('mask',mask.shape)
+
+    xfloodinput=layers.Lambda(lambda x: x[...,0:13])(inputs*mask)
+    print('xfloodinput',xfloodinput.shape)
+    inputheight,inputwidth,inputchannels=xfloodinput.shape[1],xfloodinput.shape[2],xfloodinput.shape[-1]
+    xpeakinput=layers.Lambda(lambda x: x[...,13:26])(inputs*mask)
     
-    '''
-    input2d=keras.Input(shape=inputshape2d)
-    input1d=keras.Input(shape=inputshape1d)
-    x=layers.Conv2D(16,(3,3),strides=(1,1),padding='same',kernel_initializer='he_normal', use_bias=False)(input2d)
-    x=BatchNormalization()(x) 
-    x=layers.ReLU()(x)
-    x=layers.Conv2D(32,(3,3),strides=(1,1),padding='same',kernel_initializer='he_normal', use_bias=False)(x)
-    x=BatchNormalization()(x) 
-    x=layers.ReLU()(x)
-    for i in range(len(cnn2dfilters)):
-        print(i,cnn2dfilters[i])
-        x=depthsepar2dattention(x,cnn2dfilters[i],multiscale=multiscales[i],attention=attentions[i])
-        print('xdepthwise',x.shape)
-    x2d=layers.GlobalAveragePooling2D()(x)
-    print('x2d',x2d.shape)
+    print( inputheight,inputwidth,inputchannels)
+    if single1==1:
+        x=single1D(xfloodinput)
+    if single1==2:
+        x=single1D(xpeakinput)
+    if single1==0:
+        x1=single1D(xfloodinput)
+        x2=single1D(xpeakinput)
+        if fusion:
+            x=featurefusion(x1,x2,8,0)
+        else:
+            x=layers.Concatenate(axis=-1)([x1,x2])
+    x = Dense(units=256, activation='relu')(x)
+    x = Dropout(drop)(x)
+    dense_layer2 = Dense(units=128, activation='relu')(x)
+    dense_layer2 = Dropout(drop)(dense_layer2)
+    output_layer = Dense(units=2, activation='softmax')(dense_layer2)
+    model = Model(inputs=[inputs, mask_input],outputs=output_layer)
+    return model
 
-    # x2d=layers.Conv1D(256,(3,),strides=(2,),padding='same',kernel_initializer='he_normal', use_bias=False)(x2d)
-    # print('x2d',x2d.shape)
-    # x2d=layers.GlobalAveragePooling1D()(x2d)
-    x1d= cnn1d(input1d,cnn1dfilters,cnn1dattention)
-    # x2d=Dense(256)(x2d)
+# hycnn1d(inputshape=(11,11,26),drop=0,fusion=1,single1=0).summary()
+######################## For dualcnn2d #################################
+
+def masked_global_average_pooling_2d(input_data, mask):
+    """
+    Performs masked global average pooling on a 2D input tensor.
+    """
+    masked_input = input_data * mask[..., 0:1]
+    masked_sum = tf.reduce_sum(masked_input, axis=[1, 2])
+    # print('masked_sum',masked_sum.shape) # masked_sum (None, 64)
+
+    mask_sum = tf.reduce_sum(mask[...,0:1], axis=[1, 2])
+    # print('mask_sum',mask_sum) #shape=(None, 1)
+    mask_sum = tf.maximum(mask_sum, 1e-8)  
+    return masked_sum / mask_sum
+def single(input,cbrm,maskmissing):
+    x = tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), padding='same',use_bias=False)(input)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    x = Conv2D(filters=32, kernel_size=(3, 3),padding='same',use_bias=False)(x)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    if cbrm:
+        # x= channel_attention(x,ratio=8)
+        x=spatial_attention(x)
+    x= Conv2D(filters=64, kernel_size=(3, 3),padding='same',use_bias=False)(x)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    x= Conv2D(filters=128, kernel_size=(3, 3),padding='same',use_bias=False)(x)
+    x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    
+    # x=spatial_attention_lowhigh(low,high,kernel_size=7)
+    # if filter==64:
+    #     x = Conv2D(filters=64, kernel_size=(3,3), activation='relu',padding='valid')(x)
+    # x= Conv2D(filters=128, kernel_size=(3,3),padding='same',use_bias=False)(x)
+    # x=BatchNormalization(axis=-1)(x) 
+    # x = layers.ReLU()(x)
+    # if maskmissing:
+    #     x=masked_global_average_pooling_2d(x, mask)
+    # else:
+    x=GlobalAveragePooling2D()(x)
+    # print('xmask',x.shape)
+    # print(x.shape[0])
+    # 调整 mask 的维度
+    # mask1 = tf.reshape(mask, [tf.shape(x)[0], -1]) 
+    # print(mask1.shape, 'mask')
+    return x
+def hycnn2d(inputshape,drop,cbrm,fusion,single1,maskmissing):
+    inputs= Input(shape=inputshape)
+    # mask_input = Input(shape=inputshape)  # 假设 mask 的通道数为 1
+    # mask0=mask_input[...,0:13]
+    # mask1=mask_input[...,13:26]
+    xflood=layers.Lambda(lambda x: x[...,0:13])(inputs)
+    xpeak=layers.Lambda(lambda x: x[...,13:26])(inputs)
+    if single1==0:
+        x=single(xflood,cbrm,maskmissing)
+    if single1==1:
+        x=single(xpeak,cbrm,maskmissing)
+    if single1==2:
+        x1=single(xflood,cbrm,maskmissing)
+        x2=single(xpeak,cbrm,maskmissing)
+        if fusion:
+            x3=layers.Concatenate(axis=-1)([x1,x2])
+
+            # x=featurefusion(x1,x2,8,0)
+            # 计算每个样本的绝对值以用于有效性判断
+            # abs_output_branch1 = tf.abs(x1)
+
+            # # 计算权重：每行的绝对值归一化
+            # weights_branch1 = abs_output_branch1 / (tf.reduce_sum(abs_output_branch1, axis=1, keepdims=True) + 1e-6)
+
+            # # 加权融合
+            # x = weights_branch1 * x1 + (1 - weights_branch1) * x2
+            # x=layers.Concatenate(axis=-1)([x1,x2])
+            # x=tf.keras.layers.Dense(, activation='relu'),
+            is_x1_zero = tf.reduce_all(tf.equal(x1, 0), axis=1, keepdims=True)
+            is_x2_zero = tf.reduce_all(tf.equal(x2, 0), axis=1, keepdims=True)
+            print('is_x1_zero',is_x1_zero)
+
+            normal_attention_weights = tf.keras.layers.Dense(1, activation='sigmoid')(x3)
+            # attention_weights = tf.where(
+            #     is_x1_zero,
+            #     tf.zeros_like(normal_attention_weights),
+            #     normal_attention_weights
+            # )
+            attention_weights = tf.where(
+            is_x1_zero,  # 如果 is_x1_zero 为真
+            tf.zeros_like(normal_attention_weights),  # 则 attention_weights 为全零
+            tf.where(
+                is_x2_zero,  # 否则，如果 is_x2_zero 为真
+                tf.ones_like(normal_attention_weights),  # 则 attention_weights 为全一
+                normal_attention_weights  # 否则，使用 normal_attention_weights
+            )
+        )
+
+            inverse_attention_weights = 1 - attention_weights
+
+            weighted_output_1 = x1 * attention_weights
+            weighted_output_2 = x2 * inverse_attention_weights
+            print('weighted_output_1',weighted_output_1)
+            x = layers.Add()([weighted_output_1, weighted_output_2])
+
+    
+        else:
+            x=layers.Concatenate(axis=-1)([x1,x2])
+    ## fully connected layers
+    
+    x = Dense(units=256, activation='relu')(x)
+    x = Dropout(drop)(x)
+    dense_layer2 = Dense(units=128, activation='relu')(x)
+    dense_layer2 = Dropout(drop)(dense_layer2)
+    output_layer = Dense(units=2, activation='softmax')(dense_layer2)
+    model = Model(inputs=[inputs], outputs=output_layer)
+    return model
+# hycnn2d(inputshape=(11,11,26),drop=0,cbrm=0,fusion=0,single1=2).summary()
+# a=7
+def hycnn3d(inputshape,drop,cbrm=1,filter=64):
+    input_layer = Input(shape=inputshape)
+    input_layer = expand_dims(input_layer, axis=-1)
+
+    ## convolutional layers
+    # pad_depth = pad_height = 1
+    # pad_width = 0
+    # # Pad the input layer along the depth and height dimensions
+    # padded_input = tf.pad(input_layer, [[0, 0], [pad_depth, pad_depth], [pad_height, pad_height], [0, 0], [0, 0]])
+
+    # Define the convolutional layer
    
-    if fusionattention==1:
-        x=featurefusion(cnn2df=x2d,cnn1df=x1d,ratio=8,eca=eca)
-    else:
-        x=layers.concatenate([x2d,x1d],axis=-1)
-    x= layers.Dropout(dropout)(x)
-    x=Dense(64)(x)
-    x= layers.Dropout(dropout)(x)
-    output_layer=Dense(2,activation='softmax')(x) #,activation='sigmoid'
-    # output_layer=Dense(1, activation='sigmoid')(x)
-    print('1111111111111111111111111111111111111111111111111111111')
+    x= tf.keras.layers.Conv3D(filters=8*2, kernel_size=(3, 3, 7),  padding='valid')(input_layer)
+    # x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    # conv_layer1 = Conv3D(filters=8*2, kernel_size=(3, 3, 7), activation='relu',padding='valid')(input_layer)
+    x= Conv3D(filters=16*2, kernel_size=(3, 3, 5), padding='valid')(x)
+    # x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
+    # x= Conv3D(filters=64*2, kernel_size=(3, 3, 3), activation='relu',padding='valid')(x)
+    x=Conv3D(filters=32*2, kernel_size=(3, 3, 3), padding='valid')(x)
+    x = layers.ReLU()(x)
+    # x=Conv3D(filters=64*2, kernel_size=(3, 3, 3), padding='valid')(x)
+    # x = layers.ReLU()(x)
+    
+    # x= Reshape((x_shape[1], x_shape[2], x_shape[3]*x_shape[4]))(x)
+    # x= Conv3D(filters=64*2, kernel_size=(1, 1, 3), activation='relu',padding='valid')(x)
+    # conv_layer35= Conv3D(filters=32*2, kernel_size=(5, 5, 3), activation='relu',padding='same')(conv_layer2)
+    # conv_layer31= Conv3D(filters=32*2, kernel_size=(1, 1, 3), activation='relu',padding='same')(conv_layer2)
+    # x=Concatenate(axis=-1)([conv_layer31,conv_layer33,conv_layer35])
+    if cbrm:
+        x= channel_attention(x,ratio=8)
+        # print('x1',x.shape)
+        x=spatial_attention(x)
+        # print('x2',x.shape)
+    x=Lambda(lambda x: K.mean(x, axis=-2, keepdims=False))(x)
+    if filter==64:
+        x = Conv2D(filters=64, kernel_size=(3,3),padding='valid')(x)
+        # x=BatchNormalization(axis=-1)(x) 
+        x = layers.ReLU()(x)
 
-    return Model([input2d,input1d],output_layer)
+    x = Conv2D(filters=128, kernel_size=(3,3),padding='valid')(x)
+    # x=BatchNormalization(axis=-1)(x) 
+    x = layers.ReLU()(x)
 
-def dualsparableCnn2d(inputshape, cnn2dfilters, cnn1dfilters, multiscales, attentions,
-                      cnn1dattention=0, fusionattention=0, dropout=0):
+    x=GlobalAveragePooling2D()(x)
+    
+    flatten_layer = Flatten()(x)
+
+    dense_layer1 = Dense(units=256, activation='relu')(flatten_layer)
+    dense_layer1 = Dropout(drop)(dense_layer1)
+    dense_layer2 = Dense(units=128, activation='relu')(dense_layer1)
+    dense_layer2 = Dropout(drop)(dense_layer2)
+    # if eca==1:
+    # x=eca_block(dense_layer2 , b=1, gama=2)
+    
+    output_layer = Dense(units=2, activation='softmax')(x)
+    # define the model with input layer and output layer
+    model = Model(inputs=input_layer, outputs=output_layer)
+    return model
+
+# hycnn3d((11,11,13),drop=0.4,cbrm=0,filter=128,eca=1).summary()
+
+
+class SelfAttention(layers.Layer):
+    def __init__(self, units):
+        super(SelfAttention, self).__init__()
+        self.units = units
+
+        self.query = layers.Dense(units)
+        self.key = layers.Dense(units)
+        self.value = layers.Dense(units)
+
+    def call(self, inputs):
+        query = self.query(inputs)
+        key = self.key(inputs)
+        value = self.value(inputs)
+
+        attention_weights = tf.nn.softmax(tf.matmul(query, key, transpose_b=True))
+        output = tf.matmul(attention_weights, value)
+
+        return output
+    
+
+
+def self_attention(inputs, ratio):
+    units=inputs.shape[-1]//ratio
+    query = layers.Dense(units)(inputs)
+    key = layers.Dense(units)(inputs)
+    value = layers.Dense(units)(inputs)
+
+    # attention_weights = tf.nn.softmax(tf.matmul(query, key, transpose_b=True))
+    attention_weights = tf.nn.softmax(tf.matmul(query, key, transpose_b=True) / tf.sqrt(tf.cast(units, tf.float32)), axis=-1)
+    # if mask is not None:
+    #         scores += (mask * -1e9)
+    #     attention_weights = tf.nn.softmax(scores, axis=-1)
+    #     context = tf.matmul(attention_weights, value)
+    output = tf.matmul(attention_weights, value)
+    print('att',output.shape)
+
+    return output
+
+
+def lstm(input_channels,timestep, n_classes, drop,inputs=None):
     """
-    Build a dual-scale CNN model with spatial and channel attention.
-
-    Args:
-        inputshape (tuple): Input shape of the data.
-        cnn2dfilters (list): List of 2D CNN filter sizes.
-        cnn1dfilters (list): List of 1D CNN filter sizes.
-        multiscales (list): List of scales for multiscale attention.
-        attentions (list): List of attention types.
-        cnn1dattention (int): Attention type for 1D CNN.
-        dropout (float): Dropout rate.
-
-    Returns:
-        Model: Compiled Keras model.
+    LSTM-based model for remote sensing image classification
     """
-    # Input layer
-    input = keras.Input(shape=inputshape)
+    
+    if inputs is None:
+        inputs = tf.keras.Input(shape=(timestep,input_channels))
 
-    # First two convolutional layers
-    x = layers.Conv2D(16, (3, 3), strides=(1, 1), padding='same',
-                       kernel_initializer='he_normal', use_bias=False)(input)
-    x = layers.Conv2D(32, (3, 3), strides=(1, 1), padding='same',
-                       kernel_initializer='he_normal', use_bias=False)(x)
+    # 定义 LSTM 层
+    lstm_layer1 = tf.keras.layers.LSTM(units=64, activation='relu', return_sequences=True)
+    lstm_layer2 = tf.keras.layers.LSTM(units=64, activation='relu', return_sequences=True)
+    lstm_layer3 = tf.keras.layers.LSTM(units=64, activation='relu', return_sequences=True)
+    lstm_layer4 = tf.keras.layers.LSTM(units=64, activation='relu', return_sequences=False)
+    # lstm_layer5 = tf.keras.layers.LSTM(units=256, activation='relu', return_sequences=False)
+    drop= Dropout(0)
 
-    # Apply depth-wise separable 2D attention layers
-    for i in range(len(cnn2dfilters)):
-        x = depthsepar2dattention(x, cnn2dfilters[i], multiscale=multiscales[i],
-                                   attention=attentions[i])
+    # 定义全连接层
+    fc1= Dense(units=128, activation='relu')
+    
+    fc2 = tf.keras.layers.Dense(n_classes, activation=None)
+    
 
-    # Global Average Pooling and dense layer
-    x2d = layers.GlobalAveragePooling2D()(x)
-    # x2d = Dense(256)(x2d)
-    x1d= cnn1d(input,cnn1dfilters,cnn1dattention)
-    if fusionattention:
-        x=featurefusion(cnn2df=x2d,cnn1df=x1d,ratio=8)
-    else:
-        x=layers.concatenate([x2d,x1d],axis=-1)
+    # 正向传播
+    x = lstm_layer1(inputs)
+    x = lstm_layer2(x)
+    x = lstm_layer3(x)
+    x = lstm_layer4(x)
+    # x = lstm_layer5(x)
+   
+    x = fc1(x)
+    x=Dropout(0.4)(x)
+    x=fc2(x)
 
-    # Dropout and dense layers
-    x = layers.Dropout(dropout)(x)
-    x = Dense(64)(x)
-    x = layers.Dropout(dropout)(x)
+    model = tf.keras.Model(inputs=inputs, outputs=x)
 
-    # Output layer
-    output_layer = Dense(2, activation='softmax')(x)
-
-    # Return compiled model
-    return Model(input, output_layer)
+    return model
 
 
-# model=dualsparableCnn2d((11,11,15),[64,128,256],[32,64,128,256],[1,1,1],[1,1,1])
-# model.compile(optimizer='adam',loss='categorical_crossentropy',metrics=['accuracy'])
+# m=lstm(input_channels=13,timestep=10, n_classes=2, patch_size=11, dilation=1, inputs=None)
+# m.summary()
+
+
+
+
+
+
+
+import tensorflow as tf
+
+def HamidaEtAl(input_channels, n_classes, patch_size=11, dilation=1, inputs=None):
+    """
+    3-D Deep Learning Approach for Remote Sensing Image Classification
+    Amina Ben Hamida, Alexandre Benoit, Patrick Lambert, Chokri Ben Amar
+    IEEE TGRS, 2018
+    https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=8344565
+    """
+    
+    if inputs is None:
+        inputs = tf.keras.Input(shape=(None, None, None, input_channels))
+
+    # Define convolutional layers
+    conv1 = tf.keras.layers.Conv3D(20, (3, 3, 3), strides=(1, 1, 1), dilation_rate=(dilation, 1, 1), padding='same', activation='relu')
+    pool1 = tf.keras.layers.Conv3D(20, (1, 1, 3), strides=(1, 1, 2), dilation_rate=(dilation, 1, 1), padding='same', activation='relu')
+    conv2 = tf.keras.layers.Conv3D(35, (3, 3, 3), strides=(1, 1, 1), dilation_rate=(dilation, 1, 1), padding='same', activation='relu')
+    pool2 = tf.keras.layers.Conv3D(35, (1, 1, 3), strides=(1, 1, 2), dilation_rate=(dilation, 1, 1), padding='same', activation='relu')
+    conv3 = tf.keras.layers.Conv3D(35, (1, 1, 3), strides=(1, 1, 1), dilation_rate=(dilation, 1, 1), padding='same', activation='relu')
+    conv4 = tf.keras.layers.Conv3D(35, (1, 1, 2), strides=(1, 1, 2), dilation_rate=(dilation, 1, 1), padding='same', activation='relu')
+    flatten = tf.keras.layers.Flatten()
+    fc = tf.keras.layers.Dense(n_classes, activation=None)
+
+    # Forward pass
+    x = conv1(inputs)
+    x = pool1(x)
+    x = conv2(x)
+    x = pool2(x)
+    x = conv3(x)
+    x = conv4(x)
+    x = flatten(x)
+    x = fc(x)
+
+    model = tf.keras.Model(inputs=inputs, outputs=x)
+
+    return model
+
+# Example usage:
+# model = HamidaEtAl(input_channels=10, n_classes=10)
 # model.summary()
-# x=np.random.random((100,11,11,15))
-# y=np.random.randint(2, size=(100, 2))
-# model.fit(x,y,epochs=2)
-# model.save('model.h5')
+# inputshape=(11,11,15,1)
+# inputs=keras.Input(shape=inputshape)
+# model=HamidaEtAl(input_channels=15, n_classes=2, patch_size=11, dilation=1, inputs=inputs)
+# model.summary()
+
+
+
 
 
 
