@@ -13,13 +13,14 @@ def weight_loss(y_true,y_pred,mask,is_mask=False):
     y_pred: 预测概率,shape=(64,2),tf.reduce_sum(y_pred,axis=1)=1
     class_weights 是一个字典,根据函数compute_class_weights得到的权重
     
-    mask: 布尔数组, shape is (batch_size, height, width, channels)
-
+    mask: 布尔数组, shape 和输入patch一样(batch_size, height, width, channels). 输入patch中空缺值为0,非空缺值为1
+    is_mask: 判断损失函数是否乘以有效像素率
     '''
-    class_weights = tf.constant([0.8361688720856963,1.2436738519212747])
+    # class_weights = tf.constant([0.8361688720856963,1.2436738519212747])
+    #### 2725,1633,1092
+    class_weights=tf.constant([0.8343539497856706, 1.2477106227106227])
 
     # 计算每个样本的交叉熵损失
-    # y precit是概率值
     ylogit=tf.math.log(tf.clip_by_value(y_pred, 1e-10, 1.0))
     # print('ylogit',y_true * ylogit) #(64, 2)
     y=np.argmax(y_true, axis=-1)
@@ -27,11 +28,13 @@ def weight_loss(y_true,y_pred,mask,is_mask=False):
     cross_entropy = -tf.reduce_sum(y_true * ylogit,axis=1)*weights # 64,1
     meanloss = tf.reduce_mean(cross_entropy)
     if is_mask:
-        #计算每个样本的有效像素数量 
+        #计算每个样本的有效像素数量，return shape (64,)
         valid_pixels = tf.reduce_sum(mask, axis=[1, 2, 3]) 
-        # 计算每个样本中输入batch大小 heightxwidthxchannels
-        valid_ratio = valid_pixels / tf.cast(tf.size(mask[0:1,...]), tf.float32)
-        # 一个batch中的像素有效率
+        # 计算每个样本中输入batch大小 heightxwidthxchannels,return shape (64,)
+        total_pixels =tf.cast(tf.size(mask[0:1,...]), tf.float32) 
+        # 一个样本中的像素有效率
+        valid_ratio = valid_pixels / total_pixels
+        # 一个batch中的像素有效率 
         valid_ratio = tf.reduce_mean(valid_ratio)
         return meanloss*valid_ratio
 

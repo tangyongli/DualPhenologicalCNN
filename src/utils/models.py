@@ -81,8 +81,17 @@ def single2d(input,cbrm,maskmissing,mask):
     return x
 
 def hycnn2d(inputshape,drop,cbrm,fusion,single,maskmissing):
+    '''
+    inputshape:(none,height,width,26), 前13个通道是洪水期合成影像;后13个通道是峰谷期合成影像
+    single:0,只使用洪水期
+    single:1,使用峰值期
+    single:2,两个时期
+    fusion:是否进行特征融合
+    maskmissing:是否使用maskaveragepooling layer
+    
+    '''
     inputs= Input(shape=inputshape)
-    mask_input = Input(shape=inputshape)  # 假设 mask 的通道数为 1
+    mask_input = Input(shape=inputshape)  
     mask0=mask_input[...,0:13]
     mask1=mask_input[...,13:26]
     xflood=layers.Lambda(lambda x: x[...,0:13])(inputs*mask_input)
@@ -299,7 +308,7 @@ def featurefusion(cnn2df,cnn1df,ratio,eca):
 
 
 
-####################### other model###################################`
+####################### other###################################`
 def lstm(input_channels,timestep, n_classes, drop,inputs=None):
     """
     LSTM-based model for remote sensing image classification
