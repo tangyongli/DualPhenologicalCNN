@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-smallholder paddy rice extractation using spectral-spatial fusion model in eastern Sichuan.
-=======
+Dual-Phenological Convolutional Networks for Paddy Rice Mapping in Cloud-Prone Regions.
 
->>>>>>> 17d7d70cb6777447e0e9e1596fa032d0473e0928
-
+leveraging composite Sentinel 2 optical imagery from both the transplanting period and the peak period of paddy rice.  To minimize the impact of missing values in the input data, we implemented a mask average pooling layer and a loss function that considers only valid observations.
