@@ -1,0 +1,46 @@
+data:
+  origin_trainlabel: ./datasets/samples/guanansample.csv
+  origin_vallabel: ./datasets/sc_cq/label/train3/val2296_clearcount.csv
+  originimgfolder: ./datasets/guanan/401601
+  patchsize: 11
+  savexyarray: ./datasets/guanan/401601
+  trainx_path: ./datasets/guanan/401601\addcount0trainx40151070181011_2725x.npy
+  trainy_path: ./datasets/guanan/401601\addcount0trainy40151070181011_2725y.npy
+
+model:
+  batch_size: 64
+  epochs: 10
+  modeltag: 2
+models_params:
+  model1:
+    params:
+      batch_size:
+      - 64
+      cbrm:
+      - 0
+      decay_steps:
+      - 30
+      - 40
+      dropout:
+      - 0.4
+      epochs:
+      - 20
+      fusion:
+      - 0
+      maskaverage:
+      - 0
+      maskloss:
+      - 0
+      modelname:
+      - cnn2d
+      period:
+      - 2
+      ratio:
+      - 0.0
+train:
+  lr_schedule:
+    decay_rate: 0.95
+    initial_learning_rate: 0.0001
+    staircase: true
+  model_dir: ./log/train/medin401601
+  model_path: 
