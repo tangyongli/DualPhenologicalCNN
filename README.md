@@ -4,4 +4,4 @@ leveraging composite Sentinel 2 optical imagery from both the transplanting peri
 
 To minimize the impact of missing values in the input data, we implemented a mask average pooling layer and a loss function that considers only valid observations .
 
-![flow](src/assets/flow.jpg)(src/assets/Flow.jpg)
+![flow](./src/assets/Flow.jpg)
